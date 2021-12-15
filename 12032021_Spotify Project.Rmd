@@ -1,0 +1,409 @@
+---
+title: "Spotify Project-Predicting Genre for better User-Recommendation"
+author: "Group 8 (Data Wrangling) - Dheeraj Kumar and Puneet Kumar"
+date: "12/03/2021"
+output: 
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    math: katex
+---
+# Spotify Data Analysis ---------------------------------------------------
+
+## Introduction
+
+1.1 We are using the Spotify dataset, which has many audio features for a variety of songs, which are classified by genres. As music is loved by everyone around the world, a Spotify user will always be interested in getting recommendations on specific genre types that they frequently listen to. And as Spotify is concerned with improving the user experience, providing better recommendations to the end user will help in improving customer satisfaction. Hence, through this project we are trying to predict the genre of a song based on the audio features.   
+1.2 To predict the genre, we will be using classification models such as Decision Tree, K-Nearest Neighbors, Random Forest and XGBoost. We will then be comparing the accuracy metrics for each of the models and going ahead with the model that gives the best prediction based on the available data.  
+1.3 The approach to solve this problem will be as follows:  
+•	Performing EDA on the entire dataset to analyze the data distribution
+•	Cleaning the dataset by changing any datatypes of columns if required, checking and imputing null values, and correcting/formatting any values if required.  
+•	Analyzing correlation between features and performing feature reduction  
+•	Building the classification model to predict the genre of the songs  
+•	Predicting the genres using the model and analyzing accuracy scores and other metrics.  
+1.4 Through this genre prediction model, Spotify can classify songs of all categories easily, and suggest its customers the kinds of songs they like to listen. And as a customer will get better song recommendations, it will be more likely that they purchase the premium membership offered by Spotify. Hence a satisfied customer will ultimately result in increased revenue for Spotify.  
+
+
+## Packages Required
+
+``` {r}
+suppressWarnings(library(ggplot2))  #for Plotting
+
+suppressWarnings(library(dplyr))    #for wrangling with dataframe
+
+suppressWarnings(library(corrplot)) #for plotting correlation between variables
+
+```
+
+## Data Preparation
+
+3.1 The data was collected from the following URL - [Github-TidyTuesday)(https://github.com/rfordatascience/tidytuesday/tree/master/data/2020/2020-01-21)
+3.2 The data comes from Spotify via the spotifyr package. Charlie Thompson, Josiah Parry, Donal Phipps, and Tom Wolff authored this package to make it easier to get either your own data or general metadata arounds songs from Spotify's API. Make sure to check out the spotifyr package website to see how you can collect your own data!    Spotifyr is an R wrapper for pulling track audio features and other information from Spotify’s Web API in bulk. By automatically batching API requests, it allows you to enter an artist’s name and retrieve their entire discography in seconds, along with Spotify’s audio features and track/album popularity metrics. You can also pull song and playlist information for a given Spotify User (including yourself!).
+
+3.3 We will be performing the following data importing and cleaning steps on the dataset  
+•	Reading the file from the designated URL  
+
+```{r}
+spotify_songs_data <- read.csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-01-21/spotify_songs.csv')
+```
+
+•	Checking the number of rows and columns in the dataset  
+```{r}
+dim(spotify_songs_data)
+```
+
+•	Renaming column names for any column if required  
+```{r}
+colnames(spotify_songs_data)    #not required
+```
+
+• Getting to know the data
+
+Ensuring all numerical datatype columns have only numeric data and no character data 
+
+```{r}
+str(spotify_songs_data)
+```
+
+Datatypes look fine, so nothing is reqd.  
+```{r}
+head(spotify_songs_data, 4)
+```
+```{r}
+summary(spotify_songs_data)
+```
+
+We can see that there is clear outlier in duration_ms, with a song length of 4sec. This is not possible. So, we just get rid of the row.
+
+```{r}
+spotify_songs_data <- filter(spotify_songs_data, spotify_songs_data$duration_ms>4000)
+```
+
+• Now, we are looking for the representation of different Genres in our sample dataset:
+```{r}
+summary_data <- spotify_songs_data %>%
+  group_by(playlist_genre) %>%
+  summarise(Count = n())
+summary_data
+```
+
+So, the sample set seems to be balanced as it is almost unformly distributed among all 6 Genres   
+
+•	Checking null values and then either imputing the null values with appropriate values, or removing them from the dataset
+
+```{r}
+sum(is.na(spotify_songs_data))
+```
+
+Since we have only 15 null values, dropping rows with null values  
+
+```{r}
+spotify_songs_data <- na.omit(spotify_songs_data)  
+```
+
+• Since we have Track_ID, we can remove other characterizing columns consisting of other identifying variable like track_name, track_artist, track_album_id, track_album_id, track_album_name, track_album_release_date, playlist_name, playlist_id and playlist_subgenre. We are now left with 12 Independent variables, and 1 Dependent Variable. Let us create another dataframe with only numerical columns for analysis and then we can mutate it later with our response variable.
+
+```{r}
+num_col <- unlist(lapply(spotify_songs_data,is.numeric))
+
+spotify_num_col <- spotify_songs_data[,num_col]
+
+head(spotify_num_col, 5)
+
+par(mfrow=c(1,1))
+
+```
+
+
+3.4 Displaying data 
+
+## Displaying Data
+
+### Analyzing distribution of genres
+```{r}
+
+pie <- ggplot(spotify_songs_data, aes(x = "", fill = factor(playlist_genre))) +
+geom_bar(width = 1) +
+theme(axis.line = element_blank(),
+plot.title = element_text(hjust=0.5)) +
+labs(fill="Genre",
+x=NULL,
+y=NULL,
+title="Playlist Genre dsitribution",
+caption="Source: Spotify")
+
+pie + coord_polar(theta = "y", start=0)
+
+```
+
+
+```{r}
+corrplot(cor(spotify_num_col), method = 'square', order = 'FPC', type = 'lower', diag = FALSE) #Correlation and Pairwise Graphs
+```
+
+Between loudness and Energy, a correlation of 0.67 was observed. Hence, if required during modelling we may drop either of these from further steps.
+
+•	Analyzing the distribution of data in all columns using histogram and other plots  
+
+```{r}
+par(mfrow = c(2, 2))
+
+hist(spotify_songs_data$danceability)
+hist(spotify_songs_data$energy)
+hist(spotify_songs_data$key)
+hist(spotify_songs_data$loudness)
+par(mfrow = c(2, 2))
+hist(spotify_songs_data$mode)
+hist(spotify_songs_data$speechiness)
+hist(spotify_songs_data$acousticness)
+hist(spotify_songs_data$instrumentalness)
+par(mfrow = c(2, 2))
+hist(spotify_songs_data$liveness)
+hist(spotify_songs_data$valence)
+hist(spotify_songs_data$tempo)
+hist(spotify_songs_data$duration_ms)
+```
+
+
+### Analyzing relationship between energy, loudness and acousticness
+
+```{r}
+par(mfrow = c(2, 1))
+
+ggplot(data = spotify_songs_data, aes(x=energy, y=loudness, color=playlist_genre)) +
+geom_point(alpha=0.3, size=0.3)
+
+ggplot(data = spotify_songs_data, aes(x=energy, y=acousticness, color=playlist_genre)) +
+geom_point(alpha=0.3, size=0.3)
+
+```
+From the above graph, it may seem that the trend for each Genre has a decreasing trend for both scatterplots above (Energy vs Loudness and Energy vs Acousticness). So, we may use this information for dimension reduction while modelling. The trend is more prominently seen between Energy and Loudness.
+
+3.5 Below is a description of all the columns in the dataset
+
+| **variable**                | **class** | **description**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| track\_id                   | character | Song unique ID                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| track\_name                 | character | Song Name                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| track\_artist               | character | Song Artist                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| track\_popularity           | double    | Song Popularity (0-100) where higher is better                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| track\_album\_id            | character | Album unique ID                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| track\_album\_name          | character | Song album name                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| track\_album\_release\_date | character | Date when album released                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| playlist\_name              | character | Name of playlist                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| playlist\_id                | character | Playlist ID                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| playlist\_genre             | character | Playlist genre                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| playlist\_subgenre          | character | Playlist subgenre                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| danceability                | double    | Danceability describes how suitable a track is for dancing based on a combination of musical elements including tempo, rhythm stability, beat strength, and overall regularity. A value of 0.0 is least danceable and 1.0 is most danceable.                                                                                                                                                                                                                                                                       |
+| Energy                      | double    | Energy is a measure from 0.0 to 1.0 and represents a perceptual measure of intensity and activity. Typically, energetic tracks feel fast, loud, and noisy. For example, death metal has high energy, while a Bach prelude scores low on the scale. Perceptual features contributing to this attribute include dynamic range, perceived loudness, timbre, onset rate, and general entropy.                                                                                                                          |
+| Key                         | double    | The estimated overall key of the track. Integers map to pitches using standard Pitch Class notation . E.g. 0 = C, 1 = C♯/D♭, 2 = D, and so on. If no key was detected, the value is -1.                                                                                                                                                                                                                                                                                                                            |
+| Loudness                    | double    | The overall loudness of a track in decibels (dB). Loudness values are averaged across the entire track and are useful for comparing relative loudness of tracks. Loudness is the quality of a sound that is the primary psychological correlate of physical strength (amplitude). Values typical range between -60 and 0 db.                                                                                                                                                                                       |
+| Mode                        | double    | Mode indicates the modality (major or minor) of a track, the type of scale from which its melodic content is derived. Major is represented by 1 and minor is 0.                                                                                                                                                                                                                                                                                                                                                    |
+| Speechiness                 | double    | Speechiness detects the presence of spoken words in a track. The more exclusively speech-like the recording (e.g. talk show, audio book, poetry), the closer to 1.0 the attribute value. Values above 0.66 describe tracks that are probably made entirely of spoken words. Values between 0.33 and 0.66 describe tracks that may contain both music and speech, either in sections or layered, including such cases as rap music. Values below 0.33 most likely represent music and other non-speech-like tracks. |
+| Acousticness                | double    | A confidence measure from 0.0 to 1.0 of whether the track is acoustic. 1.0 represents high confidence the track is acoustic.                                                                                                                                                                                                                                                                                                                                                                                       |
+| Instrumentalness            | double    | Predicts whether a track contains no vocals. “Ooh” and “aah” sounds are treated as instrumental in this context. Rap or spoken word tracks are clearly “vocal”. The closer the instrumentalness value is to 1.0, the greater likelihood the track contains no vocal content. Values above 0.5 are intended to represent instrumental tracks, but confidence is higher as the value approaches 1.0.                                                                                                                 |
+| liveness                    | double    | Detects the presence of an audience in the recording. Higher liveness values represent an increased probability that the track was performed live. A value above 0.8 provides strong likelihood that the track is live.                                                                                                                                                                                                                                                                                            |
+| valence                     | double    | A measure from 0.0 to 1.0 describing the musical positiveness conveyed by a track. Tracks with high valence sound more positive (e.g. happy, cheerful, euphoric), while tracks with low valence sound more negative (e.g. sad, depressed, angry).                                                                                                                                                                                                                                                                  |
+| tempo                       | double    | The overall estimated tempo of a track in beats per minute (BPM). In musical terminology, tempo is the speed or pace of a given piece and derives directly from the average beat duration.                                                                                                                                                                                                                                                                                                                         |
+| duration\_ms                | double    | Duration of song in milliseconds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+|                             |           |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+
+## Proposed Exploratory Data Analysis
+
+4.1 We will be performing EDA (Exploratory Data Analysis) on each column of the dataset to analyze the distribution of data. This will include observing the range, mean, median, and quantiles for each column. This analysis will give us a good estimate of how the data is distributed, and whether is involves any skewness. We will also be observing the relation between all pairs of numerical data columns to see if any variables are related in any way. If there is any column that contains data which can be split further to give additional insights, we will be performing the splitting as well.    
+4.2 We will using the following types of plots for analysis    
+•	Histogram – For analyzing the distribution frequency of all variables    
+•	Scatterplots – For analyzing the relationship between pairs of variables    
+•	Boxplots – For identifying any outliers that might be skewing the data    
+•	Correlation matrix – For numerically identifying the linear correlation between all pairs of variables  
+4.3 We are currently not familiar with the packages and coding syntax for the Machine Learning algorithms that needs to be applied for predicting song genres. Also, how to generate accuracy scores and other metrics, and plotting these metrics is something that we need to learn.  
+4.4 We plan on using Linear Regression for our analysis. Through fitting a regression line on the scatterplots, we will get a good idea on the trend of data. It will be a good approximation in identifying the genre of the songs based on a single variable. When combined with multiple variables together, the accuracy of the prediction should increase further.  
+
+
+### Analyzing distribution of loudness across all genres
+
+```{r}
+
+par(mfrow = c(2, 1))
+
+ggplot(data = spotify_songs_data, aes(x=as.factor(playlist_genre), y=loudness, color=playlist_genre)) +
+geom_boxplot(alpha=0.5) + labs(y = "Loudness", x = "Genre")
+
+```
+
+### Analyzing distribution of energy across all genres
+
+```{r}
+
+par(mfrow = c(2, 1))
+
+ggplot(data = spotify_songs_data, aes(x=as.factor(playlist_genre), y=energy, color=playlist_genre)) +
+geom_boxplot(alpha=0.5) + labs(y = "Energy", x = "Genre")
+
+```
+
+## Data Preparation
+
+### Converting genre from categorical to numerical values
+
+```{r}
+
+spotify_songs_data$playlist_genre <- as.numeric(as.factor(spotify_songs_data$playlist_genre))
+
+```
+
+### Checking unique converted values for genres
+
+```{r}
+
+unique(spotify_songs_data$playlist_genre)
+
+```
+
+### Convert genre to categorical columns
+
+```{r}
+
+spotify_songs_data$playlist_genre = as.factor(spotify_songs_data$playlist_genre)
+
+```
+
+### Dropping character columns
+
+```{r}
+
+drop <- c("playlist_subgenre", "track_album_release_date", "track_id", "track_name", "track_artist", "track_popularity", "track_album_id", "track_album_name", "playlist_name", "playlist_id", "loudness")
+spotify_songs_data = spotify_songs_data[,!(names(spotify_songs_data) %in% drop)]
+
+```
+
+In addition to dropping all the unnecessary columns, we have removed variable "loudness" as well, because a more prominent increasing trend is observed seen between Energy and Loudness as illustrated while visualizing earlier.
+
+### Checking final datatypes in dataset
+
+```{r}
+
+str(spotify_songs_data)
+
+```
+
+Now, we can go ahead modelling as we have all the variables as either numeric or integral. 
+
+# Model Preparation
+
+## Loading libraries
+
+```{r}
+
+library(randomForest)      # For model building
+library(caret)             # For classification training
+
+```
+
+## Feature Scaling
+
+As we are planning to use Random Forest algorithm, we need not go for feature scaling, but it would not hurt to do this as we might plan later on to use some other algorithm for comparison.
+
+```{r}
+
+spotify_songs_data[c(2:11)] <- scale(spotify_songs_data[c(2:11)])
+head(spotify_songs_data)
+
+```
+
+## Data Partition
+
+We will now split the data (in 70:30) into Training Dataset and Testing Dataset.
+
+```{r}
+
+set.seed(7025)
+dt = sort(sample(nrow(spotify_songs_data), nrow(spotify_songs_data)*.7))
+train<-spotify_songs_data[dt,]
+test<-spotify_songs_data[-dt,]
+
+```
+
+## Checking partition sizes
+
+```{r}
+
+nrow(spotify_songs_data)
+nrow(train)
+nrow(test)
+
+```
+
+## Random Forest in R
+
+We will run a Random Forest model for classification of Genres on the basis of the available 11 other Predictor Variables.
+
+```{r}
+
+library(randomForest)
+set.seed(7025)
+rf <-randomForest(playlist_genre~.,data=train, ntree=500)
+print(rf)
+
+```
+
+### Prediction & Confusion Matrix - train data
+
+```{r}
+
+p1 <- predict(rf, train)
+confusionMatrix(p1, train$playlist_genre)
+
+```
+
+Moving on, to test the model on Test Data--
+
+### Prediction & Confusion Matrix - test data
+
+```{r}
+
+p2 <- predict(rf, test)
+confusionMatrix(p2, test$playlist_genre)
+
+```
+
+We are getting a robust accuracy of ~55% on the test dataset. 
+
+### Error rate of Random Forest
+
+```{r}
+
+plot(rf)
+
+```
+
+From the above graph, it is safe to take the no. of trees parameter while modelling as 500, as we do not expect much error variation after that.
+
+### Feature Importance
+
+```{r}
+
+# plot
+
+hist(treesize(rf),
+     main = "No. of Nodes for the Trees",
+     col = "magenta")
+
+#Variable Importance
+varImpPlot(rf,
+           sort = T,
+           #n.var = 12,
+           main = "Variable Importance")
+importance(rf)
+
+```
+
+From the above Variable Importance graph, we can suggest that three of the most important variables in predicting Genre of a song are Tempo, Speechiness and Danceability, while the least important one is Mode. We tried improving the model performance by using a combination of variables (reducing the least useful ones), but this is the best performing model to predict the Genre through Random Forest algorithm.
+
+
+
+
+
+
+
+
+
